@@ -1685,17 +1685,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17f77d76d837a7830fe1d4f12b7b4ba4192c1888001c7164257e4bc6d21d96b4"
 
 [[package]]
-name = "tutorial1_window"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "log",
- "smol",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2047,6 +2036,17 @@ dependencies = [
  "bitflags 2.5.0",
  "js-sys",
  "web-sys",
+]
+
+[[package]]
+name = "wgpu_playground"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "log",
+ "smol",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]
