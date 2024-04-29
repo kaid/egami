@@ -10,7 +10,14 @@ use winit::{
 #[derive(Default)]
 struct App {
     window: Option<Arc<Window>>,
-    renderer_state: Option<renderer::RendererState>,
+    renderer: Option<renderer::Renderer>,
+}
+
+impl App {
+    fn clear(&mut self) {
+        self.renderer = None;
+        self.window = None;
+    }
 }
 
 impl ApplicationHandler for App {
@@ -19,12 +26,15 @@ impl ApplicationHandler for App {
         window.request_redraw();
 
         self.window = Some(Arc::clone(&window));
-        self.renderer_state = Some(renderer::RendererState::from(window));
+        self.renderer = Some(renderer::Renderer::from(window));
     }
 
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        self.renderer_state = None;
-        self.window = None;
+        self.clear();
+    }
+
+    fn suspended(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        self.clear();
     }
 
     fn window_event(
@@ -36,7 +46,7 @@ impl ApplicationHandler for App {
         match &self.window {
             None => return,
             Some(window) => {
-                let renderer_state = self.renderer_state.as_mut().expect("No renderer created!");
+                let renderer_state = self.renderer.as_mut().expect("No renderer created!");
 
                 if window_id == window.id() && !renderer_state.input(&event) {
                     match event {

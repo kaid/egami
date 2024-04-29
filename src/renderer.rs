@@ -7,7 +7,7 @@ use winit::window::Window;
 use wgpu::util::DeviceExt;
 
 use crate::vertex;
-pub(crate) struct RendererState {
+pub(crate) struct Renderer {
     pub(crate) num_vertices: u32,
     pub(crate) queue: wgpu::Queue,
     pub(crate) color: wgpu::Color,
@@ -19,7 +19,7 @@ pub(crate) struct RendererState {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
 
-impl RendererState {
+impl Renderer {
     pub fn from(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
