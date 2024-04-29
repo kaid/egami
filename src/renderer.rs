@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -5,22 +7,20 @@ use winit::window::Window;
 use wgpu::util::DeviceExt;
 
 use crate::vertex;
-
-pub(crate) struct RendererState<'a> {
+pub(crate) struct RendererState {
     pub(crate) num_vertices: u32,
     pub(crate) queue: wgpu::Queue,
     pub(crate) color: wgpu::Color,
     pub(crate) device: wgpu::Device,
-    pub(crate) surface: wgpu::Surface<'a>,
     pub(crate) vertex_buffer: wgpu::Buffer,
+    pub(crate) surface: wgpu::Surface<'static>,
     pub(crate) config: wgpu::SurfaceConfiguration,
     pub(crate) size: winit::dpi::PhysicalSize<u32>,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
-    pub(crate) window: &'a Window,
 }
 
-impl<'a> RendererState<'a> {
-    pub fn new(window: &'a Window) -> Self {
+impl RendererState {
+    pub fn from(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -126,7 +126,7 @@ impl<'a> RendererState<'a> {
 
         let num_vertices = vertex::VERTICES.len() as u32;
 
-        Self { size, queue, device, config, surface, window, color: wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }, render_pipeline, vertex_buffer, num_vertices }
+        Self { size, queue, device, config, surface, color: wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }, render_pipeline, vertex_buffer, num_vertices }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
