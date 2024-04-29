@@ -2,7 +2,7 @@ mod vertex;
 mod renderer;
 
 use winit::{
-    error::EventLoopError, event::*, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::{WindowBuilder}
+    error::EventLoopError, event::*, event_loop::EventLoop, keyboard::{KeyCode, PhysicalKey}, window::WindowBuilder
 };
 
 pub fn run() -> Result<(), EventLoopError> {

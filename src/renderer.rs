@@ -86,10 +86,12 @@ impl<'a> RendererState<'a> {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[vertex::Vertex::desc()],
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
