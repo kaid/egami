@@ -57,9 +57,7 @@ impl ApplicationHandler for App {
                                 ..
                             },
                             ..
-                        } => {
-                            event_loop.exit();
-                        },
+                        } => event_loop.exit(),
                         WindowEvent::Resized(new_size) => renderer_state.resize(new_size),
                         WindowEvent::RedrawRequested => {
                             renderer_state.update();
