@@ -24,7 +24,7 @@ pub(crate) const VERTICES: &[Vertex] = &[
     Vertex { position: [1.0, -1.0], texture_coords: [1.0, 1.0], }, // 3
 ];
 
-pub(crate) const INDICES: &[usize] = &[
+pub(crate) const INDICES: &[u16] = &[
     0, 2, 1,
     2, 3, 1,
 ];
