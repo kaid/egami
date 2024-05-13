@@ -7,6 +7,7 @@ use winit::window::Window;
 use wgpu::util::DeviceExt;
 
 use crate::vertex;
+use crate::vertex::Vertex;
 pub(crate) struct Renderer {
     pub(crate) num_indices: u32,
     pub(crate) queue: wgpu::Queue,
@@ -194,7 +195,10 @@ impl Renderer {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             usage: wgpu::BufferUsages::VERTEX,
-            contents: bytemuck::cast_slice(vertex::VERTICES),
+            contents: bytemuck::cast_slice(&Vertex::from(
+                diffuse_size.1 as f32 / diffuse_size.0 as f32,
+                config.height as f32 / config.width as f32,
+            )),
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
