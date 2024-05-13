@@ -1,3 +1,4 @@
+mod viewport;
 mod vertex;
 mod renderer;
 
