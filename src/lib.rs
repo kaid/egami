@@ -5,7 +5,7 @@ mod renderer;
 use std::sync::Arc;
 
 use winit::{
-    application::ApplicationHandler, error::EventLoopError, event::*, event_loop::{ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
+    application::ApplicationHandler, dpi::PhysicalSize, error::EventLoopError, event::*, event_loop::{ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
 };
 
 #[derive(Default)]
@@ -23,7 +23,11 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window: Arc<Window> = Arc::new(event_loop.create_window(Window::default_attributes().with_title("xixi")).unwrap());
+        let attributes = Window::default_attributes()
+            .with_title("xixi")
+            .with_inner_size(PhysicalSize::new(2400, 960));
+
+        let window: Arc<Window> = Arc::new(event_loop.create_window(attributes).unwrap());
         window.request_redraw();
 
         self.window = Some(Arc::clone(&window));
@@ -47,9 +51,9 @@ impl ApplicationHandler for App {
         match &self.window {
             None => return,
             Some(window) => {
-                let renderer_state = self.renderer.as_mut().expect("No renderer created!");
+                let renderer = self.renderer.as_mut().expect("No renderer created!");
 
-                if window_id == window.id() && !renderer_state.input(&event) {
+                if window_id == window.id() && !renderer.input(&event) {
                     match event {
                         WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
                             event: KeyEvent {
@@ -59,12 +63,12 @@ impl ApplicationHandler for App {
                             },
                             ..
                         } => event_loop.exit(),
-                        WindowEvent::Resized(new_size) => renderer_state.resize(new_size),
+                        WindowEvent::Resized(new_size) => renderer.resize(new_size),
                         WindowEvent::RedrawRequested => {
-                            renderer_state.update();
-                            match renderer_state.render() {
+                            renderer.update();
+                            match renderer.render() {
                                 Ok(_) => {}
-                                Err(wgpu::SurfaceError::Lost) => renderer_state.resize(renderer_state.size),
+                                Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
                                 Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
                                 Err(e) => eprint!("Error: {}", e),
                             }

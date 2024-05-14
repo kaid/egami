@@ -13,6 +13,7 @@ pub(crate) struct Renderer {
     pub(crate) queue: wgpu::Queue,
     pub(crate) color: wgpu::Color,
     pub(crate) device: wgpu::Device,
+    pub(crate) image_aspect_ratio: f32,
     pub(crate) index_buffer: wgpu::Buffer,
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) surface: wgpu::Surface<'static>,
@@ -82,6 +83,7 @@ impl Renderer {
 
         use image::GenericImageView;
         let diffuse_size = diffuse_image.dimensions();
+        let image_aspect_ratio = diffuse_size.1 as f32 / diffuse_size.0 as f32;
 
         let texture_size = wgpu::Extent3d {
             width: diffuse_size.0,
@@ -192,14 +194,7 @@ impl Renderer {
             multiview: None,
         });
     
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            usage: wgpu::BufferUsages::VERTEX,
-            contents: bytemuck::cast_slice(&Vertex::from((
-                diffuse_size.1 as f32 / diffuse_size.0 as f32,
-                config.height as f32 / config.width as f32,
-            ))),
-        });
+        let vertex_buffer = Self::get_vertex_buffer(&device, (image_aspect_ratio, config.height as f32 / config.width as f32));
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
@@ -238,17 +233,33 @@ impl Renderer {
             vertex_buffer,
             render_pipeline,
             diffuse_bind_group,
+            image_aspect_ratio,
             color: wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 },
         }
     }
 
+    fn get_vertex_buffer(device: &wgpu::Device, ratios: (f32, f32)) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            usage: wgpu::BufferUsages::VERTEX,
+            contents: bytemuck::cast_slice(&Vertex::from(ratios)),
+        })
+    }
+
+    fn reset_vertex_buffer(&mut self) {
+        self.vertex_buffer = Self::get_vertex_buffer(&self.device, (self.image_aspect_ratio, self.config.height as f32 / self.config.width as f32));
+    }
+
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
+        if new_size.width > 0 && new_size.height > 0 && new_size != self.size {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.reset_vertex_buffer();
         }
+
+        let _ = self.render();
     }
 
     pub(crate) fn input(&mut self, event: &WindowEvent) -> bool {

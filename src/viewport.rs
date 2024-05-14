@@ -15,9 +15,9 @@ impl ViewPortMargin {
         let (object_aspect_ratio, viewport_aspect_ratio) = aspect_ratios.into();
 
         if object_aspect_ratio > viewport_aspect_ratio {
-            ViewPortMargin::Horizontal((1.0 - viewport_aspect_ratio / object_aspect_ratio) / 2.0)
+            ViewPortMargin::Horizontal(1.0 - viewport_aspect_ratio / object_aspect_ratio)
         } else {
-            ViewPortMargin::Vertical((1.0 - object_aspect_ratio / viewport_aspect_ratio) / 2.0)
+            ViewPortMargin::Vertical(1.0 - object_aspect_ratio / viewport_aspect_ratio)
         }
     }
 }
