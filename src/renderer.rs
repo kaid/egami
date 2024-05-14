@@ -8,7 +8,7 @@ use wgpu::util::DeviceExt;
 
 use crate::vertex;
 use crate::vertex::Vertex;
-pub(crate) struct Renderer {
+pub struct Renderer {
     pub(crate) num_indices: u32,
     pub(crate) queue: wgpu::Queue,
     pub(crate) color: wgpu::Color,
@@ -18,7 +18,7 @@ pub(crate) struct Renderer {
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) surface: wgpu::Surface<'static>,
     pub(crate) config: wgpu::SurfaceConfiguration,
-    pub(crate) size: winit::dpi::PhysicalSize<u32>,
+    pub size: winit::dpi::PhysicalSize<u32>,
     pub(crate) diffuse_bind_group: wgpu::BindGroup,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
 }
@@ -262,7 +262,7 @@ impl Renderer {
         let _ = self.render();
     }
 
-    pub(crate) fn input(&mut self, event: &WindowEvent) -> bool {
+    pub fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 let PhysicalPosition { x, y } = position;
@@ -280,10 +280,10 @@ impl Renderer {
         }
     }
 
-    pub(crate) fn update(&mut self) {
+    pub fn update(&mut self) {
     }
 
-    pub(crate) fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
