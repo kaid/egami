@@ -1,4 +1,6 @@
+use std::rc::Rc;
 use std::sync::Arc;
+use std::cell::{Ref, RefCell};
 
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -172,6 +174,15 @@ impl GraphicsContext for WgpuRenderContext {
     }
 }
 
+impl WgpuRenderContext {
+    fn resize(&mut self, size: (u32, u32)) {
+        self.size = size;
+        self.config.width = size.0;
+        self.config.height = size.1;
+        self.surface.configure(&self.device, &self.config);
+    }
+}
+
 #[derive(Debug)]
 struct ImageProgramPayload {
     size: (u32, u32),
@@ -220,10 +231,11 @@ fn get_vertex_buffer(device: &wgpu::Device, ratios: (f32, f32)) -> wgpu::Buffer 
 }
 
 impl ImageProgramPayload {
-    fn new(context: WgpuRenderContext, frame_dimensions: (u32, u32)) -> Self {
+    fn new(context: &Ref<'_, WgpuRenderContext>, frame_dimensions: (u32, u32)) -> Self {
         let index_count = vertex::INDICES.len() as u32;
 
-        let WgpuRenderContext { config, device, .. } = context;
+        let config = &context.config;
+        let device = &context.device;
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
@@ -394,34 +406,32 @@ impl Iterator for ImageProvider {
 #[derive(Debug)]
 pub struct ImageRenderer {
     program_payload: ImageProgramPayload,
-    render_context: WgpuRenderContext,
+    render_context: Rc<RefCell<WgpuRenderContext>>,
 }
 
 impl ImageRenderer {
     pub fn from(window: Arc<Window>) -> Self {
         let size = window.inner_size();
-        let render_context = WgpuRenderContext::init_from(window, (size.width, size.height), None);
+        let ctx = Rc::new(RefCell::new(WgpuRenderContext::init_from(window, (size.width, size.height), None)));
         let texture_provider = ImageProvider::new();
-        let program_payload = ImageProgramPayload::new(render_context, texture_provider.dimensions);
+        let program_payload = ImageProgramPayload::new(&ctx.borrow(), texture_provider.dimensions);
 
 
-        Self { render_context, program_payload }
-    }
-
-    fn reset_vertex_buffer(&mut self) {
-        let WgpuRenderContext { config, device, .. } = &mut self.render_context;
-        let ImageProgramPayload { size, .. } = self.program_payload;
-        let image_aspect_ratio = size.1 as f32 / size.0 as f32;
-        self.program_payload.vertex_buffer = get_vertex_buffer(&device, (image_aspect_ratio, config.height as f32 / config.width as f32));
+        Self { render_context: ctx, program_payload }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        let WgpuRenderContext { config, .. } = &mut self.render_context;
-        if new_size.width > 0 && new_size.height > 0 && (new_size.height != config.height && new_size.width != config.width) {
-            self.render_context.config.width = new_size.width;
-            self.render_context.config.height = new_size.height;
-            self.render_context.surface.configure(&self.render_context.device, &self.render_context.config);
-            self.reset_vertex_buffer();
+        {
+            let mut ctx = self.render_context.borrow_mut();
+            if new_size.width > 0 && new_size.height > 0 && (new_size.height != ctx.config.height && new_size.width != ctx.config.width) {
+                ctx.resize((new_size.width, new_size.height));
+                let ImageProgramPayload { size, .. } = self.program_payload;
+                let image_aspect_ratio = size.1 as f32 / size.0 as f32;
+                self.program_payload.vertex_buffer = get_vertex_buffer(
+                    &ctx.device,
+                    (image_aspect_ratio, ctx.config.height as f32 / ctx.config.width as f32),
+                );
+            }
         }
 
         let _ = self.render();
