@@ -9,7 +9,7 @@ use egami::renderer;
 #[derive(Default)]
 struct App {
     window: Option<Arc<Window>>,
-    renderer: Option<renderer::Renderer>,
+    renderer: Option<renderer::ImageRenderer>,
 }
 
 impl App {
@@ -39,7 +39,7 @@ impl ApplicationHandler for App {
         window.request_redraw();
 
         self.window = Some(Arc::clone(&window));
-        self.renderer = Some(renderer::Renderer::from(window));
+        self.renderer = Some(renderer::ImageRenderer::from(window));
     }
 
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
