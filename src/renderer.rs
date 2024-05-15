@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use winit::dpi::PhysicalPosition;
-use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
 use wgpu::util::DeviceExt;
@@ -9,19 +7,19 @@ use wgpu::util::DeviceExt;
 use crate::vertex;
 use crate::vertex::Vertex;
 
-trait Provider<Output> {
-    fn provide(&self) -> Option<Output>;
-}
-
 trait GraphicsContext {
     type Color;
     type Handle;
     type RenderError;
-    type ProgramPayload<'payload>;
+    type ProgramPayload;
 
     fn init_from(handle: impl Into<Self::Handle>, size: (u32, u32), clear_color: Option<Self::Color>) -> Self;
 
-    fn render<'render>(&mut self, queue_state: impl Into<Self::ProgramPayload<'render>>, texture_provider: impl Provider<&'render [u8]>) -> Result<(), Self::RenderError>;
+    fn render<Iter: Iterator<Item = Vec<u8>>>(
+        &mut self,
+        queue_state: impl Into<Self::ProgramPayload>,
+        texture_provider: &mut Iter,
+    ) -> Result<(), Self::RenderError>;
 }
 
 #[derive(Debug)]
@@ -35,13 +33,13 @@ struct WgpuRenderContext {
 }
 
 // index_count, vertex_buffer, index_buffer, pipeline, bind_group, image_copy_texture, image_data_layout, texture_size
-type WgpuProgramPayload<'payload> = (
+type WgpuProgramPayload = (
     u32,
     wgpu::Buffer,
     wgpu::Buffer,
     wgpu::RenderPipeline,
     wgpu::BindGroup,
-    wgpu::ImageCopyTexture<'payload>,
+    Arc<wgpu::Texture>,
     wgpu::ImageDataLayout,
     wgpu::Extent3d,
 );
@@ -50,7 +48,7 @@ impl GraphicsContext for WgpuRenderContext {
     type Color = wgpu::Color;
     type RenderError = wgpu::SurfaceError;
     type Handle = wgpu::SurfaceTarget<'static>;
-    type ProgramPayload<'payload> = WgpuProgramPayload<'payload>;
+    type ProgramPayload = WgpuProgramPayload;
 
     fn init_from(handle: impl Into<Self::Handle>, size: (u32, u32), clear_color: Option<Self::Color>) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -103,21 +101,30 @@ impl GraphicsContext for WgpuRenderContext {
         Self { size, queue, device, surface, config, clear_color: clear_color.unwrap_or(wgpu::Color::default()) }
     }
     
-    fn render<'render>(&mut self, program_payload: impl Into<Self::ProgramPayload<'render>>, texture_provider: impl Provider<&'render [u8]>) -> Result<(), Self::RenderError> {
+    fn render<Iter: Iterator<Item = Vec<u8>>>(
+        &mut self,
+        queue_state: impl Into<Self::ProgramPayload>,
+        texture_provider: &mut Iter,
+    ) -> Result<(), Self::RenderError> {
         let (
             index_count,
             vertex_buffer,
             index_buffer,
             render_pipeline,
             bind_group,
-            image_copy_texture,
+            texture,
             texture_data_layout,
             texture_size,
-        ) = program_payload.into();
+        ) = queue_state.into();
 
-        if let Some(data) = texture_provider.provide() {
+        if let Some(data) = texture_provider.next() {
             self.queue.write_texture(
-                image_copy_texture,
+                wgpu::ImageCopyTexture {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
                 &data,
                 texture_data_layout,
                 texture_size,
@@ -169,27 +176,20 @@ impl GraphicsContext for WgpuRenderContext {
 struct ImageProgramPayload {
     size: (u32, u32),
     index_count: u32,
-    texture: wgpu::Texture,
     index_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    texture: Arc<wgpu::Texture>,
     render_pipeline: wgpu::RenderPipeline,
 }
 
-impl<'payload> Into<WgpuProgramPayload<'payload>> for ImageProgramPayload {
-    fn into(self) -> WgpuProgramPayload<'payload> {
+impl Into<WgpuProgramPayload> for ImageProgramPayload {
+    fn into(self) -> WgpuProgramPayload {
         // index_count, vertex_buffer, index_buffer, pipeline, bind_group, image_copy_texture, image_data_layout, texture_size
         let texture_size = wgpu::Extent3d {
             width: self.size.0,
             height: self.size.1,
             depth_or_array_layers: 1,
-        };
-
-        let texture_copy = wgpu::ImageCopyTexture {
-            texture: &self.texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
         };
 
         let texture_data_layout = wgpu::ImageDataLayout {
@@ -204,7 +204,7 @@ impl<'payload> Into<WgpuProgramPayload<'payload>> for ImageProgramPayload {
             self.index_buffer,
             self.render_pipeline,
             self.bind_group,
-            texture_copy,
+            self.texture,
             texture_data_layout,
             texture_size,
         )
@@ -355,26 +355,26 @@ impl ImageProgramPayload {
             vertex_buffer,
             render_pipeline,
             size: frame_dimensions,
-            texture: image_texture,
+            texture: Arc::new(image_texture),
             bind_group: image_bind_group,
         }
     }
 }
 
-struct ImageProvider<'a> {
+struct ImageProvider {
     dimensions: (u32, u32),
-    image_buffer: &'a [u8],
+    image_buffer: Vec<u8>,
 }
 
-impl<'a> ImageProvider<'a> {
+impl ImageProvider {
     fn new() -> Self {
         let bytes = include_bytes!("xixi.png");
         let image = image::load_from_memory(bytes).unwrap();
 
         let width = image.width();
         let height = image.height();
-        let buffer: &'a image::ImageBuffer<image::Rgba<u8>, Vec<u8>> = &image.into_rgba8();
-        let rgba8: &'a [u8] = buffer.as_raw();
+        let buffer = image.into_rgba8();
+        let rgba8 = buffer.into_vec();
 
         Self {
             dimensions: (width, height),
@@ -383,9 +383,11 @@ impl<'a> ImageProvider<'a> {
     }
 }
 
-impl<'a> Provider<&'a [u8]> for ImageProvider<'a> {
-    fn provide(&self) -> Option<&'a [u8]> {
-        Some(&self.image_buffer)
+impl Iterator for ImageProvider {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(self.image_buffer.clone())
     }
 }
 
