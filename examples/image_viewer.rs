@@ -35,7 +35,7 @@ impl ApplicationHandler for App {
             .with_title("xixi")
             .with_inner_size(PhysicalSize::new(2400, 960));
 
-        let window: Arc<Window> = Arc::new(event_loop.create_window(attributes).unwrap());
+        let window = Arc::new(event_loop.create_window(attributes).unwrap());
         window.request_redraw();
 
         self.window = Some(Arc::clone(&window));
@@ -56,38 +56,38 @@ impl ApplicationHandler for App {
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        match &self.window {
-            None => return,
-            Some(window) => {
-                let renderer = self.renderer.as_mut().expect("No renderer created!");
+        if let Some(window) = &self.window {
+            if window_id != window.id() {
+                return;
+            }
 
-                if window_id == window.id() && !renderer.input(&event) {
-                    match event {
-                        WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
-                            event: KeyEvent {
-                                state: ElementState::Pressed,
-                                physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                ..
-                            },
+            let renderer = self.renderer.as_mut().expect("No renderer created!");
+
+            if !renderer.input(&event) {
+                match event {
+                    WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
+                        event: KeyEvent {
+                            state: ElementState::Pressed,
+                            physical_key: PhysicalKey::Code(KeyCode::Escape),
                             ..
-                        } => event_loop.exit(),
-                        WindowEvent::Resized(new_size) => renderer.resize(new_size),
-                        WindowEvent::RedrawRequested => {
-                            renderer.update();
-                            match renderer.render() {
-                                Ok(_) => {}
-                                // Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
-                                Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
-                                Err(e) => eprint!("Error: {}", e),
-                            }
-                            window.request_redraw();
+                        },
+                        ..
+                    } => event_loop.exit(),
+                    WindowEvent::Resized(new_size) => renderer.resize(new_size),
+                    WindowEvent::RedrawRequested => {
+                        renderer.update();
+                        match renderer.render() {
+                            Ok(_) => {}
+                            // Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
+                            Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                            Err(e) => eprint!("Error: {}", e),
                         }
-                        _ => {},
+                        window.request_redraw();
                     }
+                    _ => {},
                 }
-            },
+            }
         }
-
     }
 }
 
