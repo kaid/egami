@@ -23,12 +23,6 @@ pub struct WgpuFrameRenderContext {
     index_count: u32,
     index_buffer: wgpu::Buffer,
 
-    // frame_size: Option<Pair<u32>>,
-    // texture: Option<wgpu::Texture>,
-    // bind_group: Option<wgpu::BindGroup>,
-    // vertex_buffer: Option<wgpu::Buffer>,
-    // render_pipeline: Option<wgpu::RenderPipeline>,
-
     resources: Option<WgpuFrameRenderContextResources>,
 }
 
