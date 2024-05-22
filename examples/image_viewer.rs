@@ -4,18 +4,20 @@ use winit::{
     application::ApplicationHandler, dpi::PhysicalSize, error::EventLoopError, event::*, event_loop::{ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
 };
 
-use egami::renderer;
+use egami::renderer::{self, FrameRenderContext, Pair, WgpuFrameRenderContext, WgpuFrameRenderContextInit, WgpuImageFrame};
 
 #[derive(Default)]
 struct App {
     window: Option<Arc<Window>>,
-    renderer: Option<renderer::ImageRenderer>,
+    render_context: Option<renderer::WgpuFrameRenderContext>,
+    frame_provider: Option<WgpuImageProvider>,
 }
 
 impl App {
     fn clear(&mut self) {
-        self.renderer = None;
         self.window = None;
+        self.render_context = None;
+        self.frame_provider = None;
     }
 
     fn run() -> Result<(), EventLoopError> {
@@ -38,8 +40,14 @@ impl ApplicationHandler for App {
         let window = Arc::new(event_loop.create_window(attributes).unwrap());
         window.request_redraw();
 
+        let window_size = window.inner_size();
         self.window = Some(Arc::clone(&window));
-        self.renderer = Some(renderer::ImageRenderer::from(window));
+        self.frame_provider = Some(WgpuImageProvider::new());
+        self.render_context = Some(WgpuFrameRenderContext::init(WgpuFrameRenderContextInit {
+            surface_handle: window.into(),
+            surface_size: (window_size.width, window_size.height),
+            clear_color: None,
+        }));
     }
 
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -61,36 +69,62 @@ impl ApplicationHandler for App {
                 return;
             }
 
-            let renderer = self.renderer.as_mut().expect("No renderer created!");
+            let context = self.render_context.as_mut().expect("No renderer created!");
 
-            if !renderer.input(&event) {
-                match event {
-                    WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
-                        event: KeyEvent {
-                            state: ElementState::Pressed,
-                            physical_key: PhysicalKey::Code(KeyCode::Escape),
-                            ..
-                        },
+            match event {
+                WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
+                    event: KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
                         ..
-                    } => event_loop.exit(),
-                    WindowEvent::Resized(new_size) => renderer.resize(new_size),
-                    WindowEvent::RedrawRequested => {
-                        renderer.update();
-                        match renderer.render() {
-                            Ok(_) => {}
-                            // Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
-                            Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
-                            Err(e) => eprint!("Error: {}", e),
-                        }
-                        window.request_redraw();
+                    },
+                    ..
+                } => event_loop.exit(),
+                WindowEvent::Resized(new_size) => context.configure((new_size.width, new_size.height)),
+                WindowEvent::RedrawRequested => {
+                    match context.draw_frame(self.frame_provider.as_ref().unwrap()) {
+                        Ok(_) => {}
+                        // Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
+                        Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                        Err(e) => eprint!("Error: {}", e),
                     }
-                    _ => {},
+                    window.request_redraw();
                 }
+                _ => {},
             }
         }
     }
 }
 
+struct WgpuImageProvider {
+    size: Pair<u32>,
+    image_buffer: Vec<u8>,
+}
+
+impl WgpuImageProvider {
+    fn new() -> Self {
+        let bytes = include_bytes!("xixi.png");
+        let image = image::load_from_memory(bytes).unwrap();
+
+        let width = image.width();
+        let height = image.height();
+        let buffer = image.into_rgba8();
+        let rgba8 = buffer.into_vec();
+
+        Self {
+            image_buffer: rgba8,
+            size: (width, height),
+        }
+    }
+}
+
+impl<'iter> Iterator for &'iter WgpuImageProvider {
+    type Item = WgpuImageFrame;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(WgpuImageFrame { size: self.size, buffer: self.image_buffer.clone() })
+    }
+}
 
 fn main() -> Result<(), winit::error::EventLoopError> {
     App::run()
