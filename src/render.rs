@@ -268,16 +268,18 @@ impl WgpuFrameRenderContextResources {
     where
         Frame: HasSize<u32> + HasPosition<u32> + HasData
     {
+        let frame_size = frame.size();
+
         queue.write_texture(
             self.texture.as_image_copy(),
             &frame.data(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * frame.size().0),
-                rows_per_image: Some(frame.size().1),
+                bytes_per_row: Some(4 * frame_size.0),
+                rows_per_image: Some(frame_size.1),
             },
             self.texture.size(),
-        );
+        )
     }
 }
 
@@ -305,19 +307,6 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         match frame_provider.next() {
             None => Ok(()),
             Some(frame) => {
-                let frame_size = frame.size();
-
-                match self.resources.as_ref() {
-                    Some(resources) => {
-                        resources.queue_write_texture(&self.queue, &frame)
-                    }
-                    None => {
-                        let resources = WgpuFrameRenderContextResources::new(&self.config, &self.device, frame_size, self.size());
-                        let _ = &resources.queue_write_texture(&self.queue, &frame);
-                        self.resources = Some(resources);
-                    }
-                }
-
                 let output = self.surface.get_current_texture()?;
                 let view = output
                     .texture
@@ -345,13 +334,17 @@ impl FrameRenderContext for WgpuFrameRenderContext {
                         depth_stencil_attachment: None,
                     });
 
-                    match self.resources.as_ref() {
-                        Some(resources) => {
-                            render_pass.set_pipeline(&resources.render_pipeline);
-                            render_pass.set_bind_group(0, &resources.bind_group, &[]);
-                            render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-                        }
-                        _ => (),
+                    if let Some(resources) = match self.resources {
+                        None => {
+                            self.resources = Some(WgpuFrameRenderContextResources::new(&self.config, &self.device, frame.size(), self.size()));
+                            &self.resources
+                        },
+                        _ => &self.resources,
+                    } {
+                        resources.queue_write_texture(&self.queue, &frame);
+                        render_pass.set_pipeline(&resources.render_pipeline);
+                        render_pass.set_bind_group(0, &resources.bind_group, &[]);
+                        render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
                     }
 
                     render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
