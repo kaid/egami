@@ -123,11 +123,6 @@ impl From<WgpuFrameRenderContextInit> for WgpuFrameRenderContext {
             index_buffer,
             index_count: INDICES.len() as u32,
 
-            // texture: None,
-            // bind_group: None,
-            // frame_size: None,
-            // vertex_buffer: None,
-            // render_pipeline: None,
             resources: None,
         }
     }
