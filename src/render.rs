@@ -26,6 +26,62 @@ pub struct WgpuFrameRenderContext {
     resources: Option<WgpuFrameRenderContextResources>,
 }
 
+impl WgpuFrameRenderContext {
+    fn init_resources<Frame>(&mut self, frame: &Frame)
+    where
+        Frame: HasSize<u32>
+    {
+        match self.resources {
+            None => {
+                self.resources = Some(WgpuFrameRenderContextResources::new(&self.config, &self.device, frame.size(), self.size()));
+            },
+            _ => (),
+        }    
+    }
+
+    fn draw<Func>(&self, update_render_pass: Func) -> Result<(), wgpu::SurfaceError>
+    where
+        Func: FnOnce(&mut wgpu::RenderPass, Option<&WgpuFrameRenderContextResources>)
+    {
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                depth_stencil_attachment: None,
+            });
+
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.index_count, 0, 0..1);
+            update_render_pass(&mut render_pass, self.resources.as_ref());
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct WgpuFrameRenderContextResources {
     frame_size: Pair<u32>,
@@ -264,6 +320,12 @@ impl WgpuFrameRenderContextResources {
         }
     }
 
+    fn send_to_render_pass<'a>(&'a self, render_pass: &'a mut wgpu::RenderPass<'a>) {
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+    }
+
     fn queue_write_texture<Frame>(&self, queue: &wgpu::Queue, frame: &Frame)
     where
         Frame: HasSize<u32> + HasPosition<u32> + HasData
@@ -292,71 +354,26 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         self.config.height = size.1;
         self.surface.configure(&self.device, &self.config);
 
-        match self.resources.as_mut() {
-            Some(resources) => {
-                resources.vertex_buffer = get_vertices(&self.device, resources.frame_size, size);
-            },
-            _ => (),
+        if let Some(resources) = self.resources.as_mut() {
+            resources.vertex_buffer = get_vertices(&self.device, resources.frame_size, size);
         }
     }
 
-    fn draw_frame<Frame>(&mut self, mut frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
+    fn draw_frame<'a, Frame>(&mut self, mut frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
     where
         Frame: HasSize<u32> + HasPosition<u32> + HasData
     {
-        match frame_provider.next() {
-            None => Ok(()),
-            Some(frame) => {
-                let output = self.surface.get_current_texture()?;
-                let view = output
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+        let frame = frame_provider.next();
 
-                let mut encoder = self
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Render Encoder"),
-                    });
-    
-                {
-                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(self.clear_color),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                        depth_stencil_attachment: None,
-                    });
-
-                    if let Some(resources) = match self.resources {
-                        None => {
-                            self.resources = Some(WgpuFrameRenderContextResources::new(&self.config, &self.device, frame.size(), self.size()));
-                            &self.resources
-                        },
-                        _ => &self.resources,
-                    } {
-                        resources.queue_write_texture(&self.queue, &frame);
-                        render_pass.set_pipeline(&resources.render_pipeline);
-                        render_pass.set_bind_group(0, &resources.bind_group, &[]);
-                        render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-                    }
-
-                    render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                    render_pass.draw_indexed(0..self.index_count, 0, 0..1);
-                }
-
-                self.queue.submit(std::iter::once(encoder.finish()));
-                output.present();
-
-                Ok(())
-            }
+        if let Some(frame) = frame.as_ref() {
+            self.init_resources(frame);
         }
 
+        self.draw(|render_pass, resouces| {
+            if let (Some(frame), Some(resources)) = (frame.as_ref(), resouces) {
+                resources.queue_write_texture(&self.queue, frame);
+                resources.send_to_render_pass(render_pass);
+            }
+        })
     }
 }
