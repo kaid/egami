@@ -3,33 +3,41 @@ use std::sync::Arc;
 use std::cell::RefCell;
 use std::borrow::{Borrow, BorrowMut};
 
-use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::dpi::{PhysicalPosition, PhysicalSize, Size};
 use winit::window::Window;
 use wgpu::util::DeviceExt;
 use winit::event::WindowEvent;
 
-use crate::vertex;
+use crate::vertex::{self, INDICES};
 use crate::vertex::Vertex;
 
-trait FrameRenderContext: From<Self::Init> + Into<Self::Size> {
-    type Size;
-    type Position;
+type Pair<Type> = (Type, Type);
+
+trait HasSize<Type> {
+    fn size(&self) -> Pair<Type>;
+}
+
+trait HasPosition<Type> {
+    fn position(&self) -> Pair<Type>;
+}
+
+trait FrameRenderContext: From<Self::Init> {
     type RenderError;
-    type Init: Into<Self::Size>;
-    type Frame: Into<Self::Size> + Into<Self::Position>;
+    type Init: HasSize<u32>;
+    type Frame: HasSize<u32> + HasPosition<u32>;
 
     fn init(init: Self::Init) -> Self {
         let instance: Self = From::from(init);
-        let size: Self::Size = init.into();
+        let size = init.size();
         instance.configure(size);
         instance
     }
 
-    fn resize(&mut self, size: Self::Size) {
+    fn resize(&mut self, size: Pair<u32>) {
         self.configure(size);
     }
 
-    fn configure(&self, size: Self::Size);
+    fn configure(&self, size: Pair<u32>);
 
     fn draw_frame(&mut self, frame_provider: impl Iterator<Item = Self::Frame>) -> Result<(), Self::RenderError>;
 }
@@ -51,56 +59,47 @@ struct WgpuFrameRenderContext {
     render_pipeline: Option<wgpu::RenderPipeline>,
 }
 
-impl Into<PhysicalSize<u32>> for WgpuFrameRenderContext {
-    fn into(self) -> PhysicalSize<u32> {
-        PhysicalSize {
-            width: self.config.width,
-            height: self.config.height,
-        }
+impl HasSize<u32> for WgpuFrameRenderContext {
+    fn size(&self) -> Pair<u32> {
+        (self.config.width, self.config.height)
     }
 }
 
-struct WgpuFrameRenderContextInit<'init> {
-    surface_size: PhysicalSize<u32>,
+struct WgpuFrameRenderContextInit {
+    surface_size: Pair<u32>,
     clear_color: Option<wgpu::Color>,
     surface_handle: wgpu::SurfaceTarget<'static>,
-
-    indices: &'init [u16],
-    vertices: &'init [Vertex],
 }
 
-impl Into<PhysicalSize<u32>> for WgpuFrameRenderContextInit<'_> {
-    fn into(self) -> PhysicalSize<u32> {
+impl HasSize<u32> for WgpuFrameRenderContextInit {
+    fn size(&self) -> Pair<u32> {
         self.surface_size
     }
 }
 
 struct WgpuFrame {
     buffer: Vec<u8>,
-    size: PhysicalSize<u32>,
-    position: PhysicalPosition<u32>,
+    size: Pair<u32>,
+    position: Pair<u32>,
 }
 
-impl Into<PhysicalPosition<u32>> for WgpuFrame {
-    fn into(self) -> PhysicalPosition<u32> {
+impl HasPosition<u32> for WgpuFrame {
+    fn position(&self) -> Pair<u32> {
         self.position
     }
 }
 
-impl Into<PhysicalSize<u32>> for WgpuFrame {
-    fn into(self) -> PhysicalSize<u32> {
+impl HasSize<u32> for WgpuFrame {
+    fn size(&self) -> Pair<u32> {
         self.size
     }
 }
 
-impl From<WgpuFrameRenderContextInit<'_>> for WgpuFrameRenderContext {
+impl From<WgpuFrameRenderContextInit> for WgpuFrameRenderContext {
     fn from(WgpuFrameRenderContextInit {
         clear_color ,
         surface_size,
         surface_handle,
-
-        indices,
-        vertices,
     }: WgpuFrameRenderContextInit) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -137,8 +136,8 @@ impl From<WgpuFrameRenderContextInit<'_>> for WgpuFrameRenderContext {
             .unwrap_or(surface_caps.formats[0]);
 
         let config = wgpu::SurfaceConfiguration {
-            width: surface_size.width,
-            height: surface_size.width,
+            width: surface_size.0,
+            height: surface_size.1,
 
             view_formats: vec![],
             format: surface_format,
@@ -157,11 +156,11 @@ impl From<WgpuFrameRenderContextInit<'_>> for WgpuFrameRenderContext {
             config,
             clear_color: clear_color.unwrap_or(wgpu::Color::default()),
 
-            index_count: indices.len() as u32,
+            index_count: INDICES.len() as u32,
             index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 usage: wgpu::BufferUsages::INDEX,
-                contents: bytemuck::cast_slice(indices),
+                contents: bytemuck::cast_slice(INDICES),
             }),
             vertex_buffer: None,
 
@@ -174,14 +173,12 @@ impl From<WgpuFrameRenderContextInit<'_>> for WgpuFrameRenderContext {
 
 impl FrameRenderContext for WgpuFrameRenderContext {
     type Frame = WgpuFrame;
-    type Size = PhysicalSize<u32>;
-    type Position = PhysicalPosition<u32>;
     type RenderError = wgpu::SurfaceError;
-    type Init = WgpuFrameRenderContextInit<'_>;
+    type Init = WgpuFrameRenderContextInit;
 
-    fn configure(&self, size: Self::Size) {
-        self.config.width = size.width;
-        self.config.height = size.height;
+    fn configure(&self, size: Pair<u32>) {
+        self.config.width = size.0;
+        self.config.height = size.1;
         self.surface.configure(&self.device, &self.config);
     }
 
@@ -191,18 +188,18 @@ impl FrameRenderContext for WgpuFrameRenderContext {
             Some(frame) => {
                 match self.texture {
                     None => {
-                        let frame_size: Self::Size = frame.into();
+                        let frame_size = frame.size();
 
                         let texture_size = wgpu::Extent3d {
-                            width: frame_size.width,
-                            height: frame_size.height,
+                            width: frame_size.0,
+                            height: frame_size.1,
                             depth_or_array_layers: 1,
                         };
 
                         let texture_data_layout = wgpu::ImageDataLayout {
                             offset: 0,
-                            rows_per_image: Some(frame.size.height),
-                            bytes_per_row: Some(4 * frame_size.width),
+                            rows_per_image: Some(frame.size.1),
+                            bytes_per_row: Some(4 * frame_size.0),
                         };
             
                         self.texture = Some(self.device.create_texture(&wgpu::TextureDescriptor {
@@ -409,7 +406,7 @@ impl ImageProgramPayload {
 }
 
 struct ImageProvider {
-    dimensions: (u32, u32),
+    dimensions: Pair<u32>,
     image_buffer: Vec<u8>,
 }
 
@@ -424,8 +421,8 @@ impl ImageProvider {
         let rgba8 = buffer.into_vec();
 
         Self {
-            dimensions: (width, height),
             image_buffer: rgba8,
+            dimensions: (width, height),
         }
     }
 }
