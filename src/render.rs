@@ -323,8 +323,9 @@ impl FrameRenderContext for WgpuFrameRenderContext {
                         resources.queue_write_texture(&self.queue, &frame)
                     }
                     None => {
-                        self.resources = Some(WgpuFrameRenderContextResources::new(&self.config, &self.device, frame_size, self.size()));
-                        self.resources.as_mut().unwrap().queue_write_texture(&self.queue, &frame)
+                        let resources = WgpuFrameRenderContextResources::new(&self.config, &self.device, frame_size, self.size());
+                        let _ = &resources.queue_write_texture(&self.queue, &frame);
+                        self.resources = Some(resources);
                     }
                 }
 
@@ -355,11 +356,15 @@ impl FrameRenderContext for WgpuFrameRenderContext {
                         depth_stencil_attachment: None,
                     });
 
-                    let resources = self.resources.as_ref().unwrap();
+                    match self.resources.as_ref() {
+                        Some(resources) => {
+                            render_pass.set_pipeline(&resources.render_pipeline);
+                            render_pass.set_bind_group(0, &resources.bind_group, &[]);
+                            render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
+                        }
+                        _ => (),
+                    }
 
-                    render_pass.set_pipeline(&resources.render_pipeline);
-                    render_pass.set_bind_group(0, &resources.bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
                     render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                     render_pass.draw_indexed(0..self.index_count, 0, 0..1);
                 }
