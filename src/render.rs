@@ -1,47 +1,15 @@
 use wgpu::util::DeviceExt;
-
 use crate::vertex::{self, INDICES, Vertex};
-
-pub type Pair<Type> = (Type, Type);
-
-pub trait HasSize<Type> {
-    fn size(&self) -> Pair<Type>;
-}
-
-pub trait HasPosition<Type> {
-    fn position(&self) -> Pair<Type>;
-}
-
-pub trait HasRatio {
-    fn ratio(&self) -> f32;
-}
-
-pub trait HasData {
-    fn data(&self) -> &[u8];
-}
+use crate::types::{Pair, FrameRenderContext, HasData, HasPosition, HasSize, HasRatio};
 
 impl HasRatio for Pair<u32> {
     fn ratio(&self) -> f32 {
         self.0 as f32 / self.1 as f32
     }
-}
 
-pub trait FrameRenderContext: From<Self::Init> + HasSize<u32> {
-    type Init;
-    type RenderError;
-
-    fn init(init: Self::Init) -> Self {
-        let mut instance = Self::from(init);
-        let size = instance.size();
-        instance.configure(size);
-        instance
+    fn inverse_ratio(&self) -> f32 {
+        self.1 as f32 / self.0 as f32
     }
-
-    fn configure(&mut self, size: Pair<u32>);
-
-    fn draw_frame<Frame>(&mut self, frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
-    where
-        Frame: HasSize<u32> + HasPosition<u32> + HasData;
 }
 
 #[derive(Debug)]
@@ -55,6 +23,7 @@ pub struct WgpuFrameRenderContext {
     index_count: u32,
     index_buffer: wgpu::Buffer,
 
+    frame_size: Option<Pair<u32>>,
     texture: Option<wgpu::Texture>,
     bind_group: Option<wgpu::BindGroup>,
     vertex_buffer: Option<wgpu::Buffer>,
@@ -151,8 +120,45 @@ impl From<WgpuFrameRenderContextInit> for WgpuFrameRenderContext {
 
             texture: None,
             bind_group: None,
+            frame_size: None,
             vertex_buffer: None,
             render_pipeline: None,
+        }
+    }
+}
+
+impl WgpuFrameRenderContext {
+    fn get_vertices(&self) -> Option<wgpu::Buffer> {
+        match self.frame_size {
+            Some(frame_size) => {
+                Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    usage: wgpu::BufferUsages::VERTEX,
+                    contents: bytemuck::cast_slice(&Vertex::get_vertices((frame_size.inverse_ratio(), self.size().inverse_ratio()))),
+                }))
+            },
+            _ => None,
+        }
+    }
+
+    fn queue_write_texture<Frame>(&self, frame: &Frame)
+    where
+        Frame: HasSize<u32> + HasPosition<u32> + HasData
+    {
+        match self.texture.as_ref() {
+            Some(texture) => {
+                self.queue.write_texture(
+                    texture.as_image_copy(),
+                    &frame.data(),
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * frame.size().0),
+                        rows_per_image: Some(frame.size().1),
+                    },
+                    texture.size(),
+                );
+            },
+            _ => (),
         }
     }
 }
@@ -165,6 +171,13 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         self.config.width = size.0;
         self.config.height = size.1;
         self.surface.configure(&self.device, &self.config);
+
+        match self.vertex_buffer.as_ref() {
+            Some(_) => {
+                self.vertex_buffer = self.get_vertices();
+            },
+            _ => (),
+        }
     }
 
     fn draw_frame<Frame>(&mut self, mut frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
@@ -174,23 +187,18 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         match frame_provider.next() {
             None => Ok(()),
             Some(frame) => {
+                self.frame_size = Some(frame.size());
+
                 match self.texture {
                     None => {
-                        let frame_size = frame.size();
-
+                        let frame_size = self.frame_size.unwrap();
                         let texture_size = wgpu::Extent3d {
                             width: frame_size.0,
                             height: frame_size.1,
                             depth_or_array_layers: 1,
                         };
 
-                        let texture_data_layout = wgpu::ImageDataLayout {
-                            offset: 0,
-                            rows_per_image: Some(frame_size.1),
-                            bytes_per_row: Some(4 * frame_size.0),
-                        };
-
-                        self.vertex_buffer = Some(get_vertex_buffer(&self.device, (frame_size.ratio(), self.size().ratio())));
+                        self.vertex_buffer = self.get_vertices();
 
                         self.texture = Some(self.device.create_texture(&wgpu::TextureDescriptor {
                             label: Some("Image Texture"),
@@ -204,13 +212,6 @@ impl FrameRenderContext for WgpuFrameRenderContext {
                         }));
                         
                         let texture = self.texture.as_ref().unwrap();
-
-                        self.queue.write_texture(
-                            texture.as_image_copy(),
-                            &frame.data(),
-                            texture_data_layout,
-                            texture_size,
-                        );
 
                         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -314,6 +315,8 @@ impl FrameRenderContext for WgpuFrameRenderContext {
                     _ => (),
                 }
 
+                self.queue_write_texture(&frame);
+
                 let output = self.surface.get_current_texture()?;
                 let view = output
                     .texture
@@ -356,12 +359,4 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         }
 
     }
-}
-
-fn get_vertex_buffer(device: &wgpu::Device, ratios: Pair<f32>) -> wgpu::Buffer {
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Vertex Buffer"),
-        usage: wgpu::BufferUsages::VERTEX,
-        contents: bytemuck::cast_slice(&Vertex::from(ratios)),
-    })
 }

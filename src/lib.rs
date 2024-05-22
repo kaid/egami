@@ -1,3 +1,4 @@
 mod viewport;
 mod vertex;
-pub mod renderer;
+pub mod types;
+pub mod render;

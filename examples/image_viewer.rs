@@ -4,12 +4,13 @@ use winit::{
     application::ApplicationHandler, dpi::PhysicalSize, error::EventLoopError, event::*, event_loop::{ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
 };
 
-use egami::renderer::{self, FrameRenderContext, HasData, HasPosition, HasSize, Pair, WgpuFrameRenderContext, WgpuFrameRenderContextInit};
+use egami::types::{FrameRenderContext, HasData, HasPosition, HasSize, Pair};
+use egami::render::{self, WgpuFrameRenderContext, WgpuFrameRenderContextInit};
 
 #[derive(Default)]
 struct App {
     window: Option<Arc<Window>>,
-    render_context: Option<renderer::WgpuFrameRenderContext>,
+    render_context: Option<render::WgpuFrameRenderContext>,
     frame_provider: Option<WgpuImageProvider>,
 }
 
@@ -28,6 +29,41 @@ impl App {
 
         let mut app = Self::default();
         event_loop.run_app(&mut app)
+    }
+
+    fn resize(&mut self, size: Pair<u32>) -> Result<(), bool> {
+        match self.render_context.as_mut() {
+            Some(context) => {
+                context.configure(size);
+                self.render()
+            },
+            None => Ok(()),
+        }
+    }
+
+    fn render(&mut self) -> Result<(), bool> {
+        match self.render_context.as_mut() {
+            Some(context) => {
+                match context.draw_frame(self.frame_provider.as_ref().unwrap()) {
+                    Ok(_) => {
+                        self.window.as_ref().unwrap().request_redraw();
+                        Ok(())
+                    },
+                    // Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
+                    Err(wgpu::SurfaceError::OutOfMemory) => Err(true),
+                    Err(_) => Err(false),
+                }
+                
+            },
+            None => Ok(()),
+        }
+    }
+
+    fn has_window(&self, window_id: winit::window::WindowId) -> bool {
+        match &self.window {
+            Some(window) => window.id() == window_id,
+            None => false,
+        }
     }
 }
 
@@ -64,13 +100,7 @@ impl ApplicationHandler for App {
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        if let Some(window) = &self.window {
-            if window_id != window.id() {
-                return;
-            }
-
-            let context = self.render_context.as_mut().expect("No renderer created!");
-
+        if self.has_window(window_id) {
             match event {
                 WindowEvent::CloseRequested | WindowEvent::KeyboardInput {
                     event: KeyEvent {
@@ -80,16 +110,14 @@ impl ApplicationHandler for App {
                     },
                     ..
                 } => event_loop.exit(),
-                WindowEvent::Resized(new_size) => context.configure((new_size.width, new_size.height)),
-                WindowEvent::RedrawRequested => {
-                    match context.draw_frame(self.frame_provider.as_ref().unwrap()) {
-                        Ok(_) => {}
-                        // Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
-                        Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
-                        Err(e) => eprint!("Error: {}", e),
-                    }
-                    window.request_redraw();
-                }
+                WindowEvent::Resized(new_size) => match self.resize((new_size.width, new_size.height)) {
+                    Err(true) => event_loop.exit(),
+                    _ => {},
+                },
+                WindowEvent::RedrawRequested => match self.render() {
+                    Err(true) => event_loop.exit(),
+                    _ => {},
+                },
                 _ => {},
             }
         }

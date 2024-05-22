@@ -18,7 +18,7 @@ impl Vertex {
         }
     }
 
-    pub(crate) fn from(aspect_ratios: (f32, f32)) -> [Self; 4] {
+    pub(crate) fn get_vertices(aspect_ratios: (f32, f32)) -> [Self; 4] {
         let (h_margin, v_margin) = ViewPortMargin::from(aspect_ratios).into();
 
         [
