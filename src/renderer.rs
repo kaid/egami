@@ -16,6 +16,10 @@ pub trait HasRatio {
     fn ratio(&self) -> f32;
 }
 
+pub trait HasData {
+    fn data(&self) -> &[u8];
+}
+
 impl HasRatio for Pair<u32> {
     fn ratio(&self) -> f32 {
         self.0 as f32 / self.1 as f32
@@ -25,7 +29,6 @@ impl HasRatio for Pair<u32> {
 pub trait FrameRenderContext: From<Self::Init> + HasSize<u32> {
     type Init;
     type RenderError;
-    type Frame: HasSize<u32> + HasPosition<u32>;
 
     fn init(init: Self::Init) -> Self {
         let mut instance = Self::from(init);
@@ -36,7 +39,9 @@ pub trait FrameRenderContext: From<Self::Init> + HasSize<u32> {
 
     fn configure(&mut self, size: Pair<u32>);
 
-    fn draw_frame(&mut self, frame_provider: impl Iterator<Item = Self::Frame>) -> Result<(), Self::RenderError>;
+    fn draw_frame<Frame>(&mut self, frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
+    where
+        Frame: HasSize<u32> + HasPosition<u32> + HasData;
 }
 
 #[derive(Debug)]
@@ -71,23 +76,6 @@ pub struct WgpuFrameRenderContextInit {
 impl HasSize<u32> for WgpuFrameRenderContextInit {
     fn size(&self) -> Pair<u32> {
         self.surface_size
-    }
-}
-
-pub struct WgpuImageFrame {
-    pub size: Pair<u32>,
-    pub buffer: Vec<u8>,
-}
-
-impl HasPosition<u32> for WgpuImageFrame {
-    fn position(&self) -> Pair<u32> {
-        (0, 0)
-    }
-}
-
-impl HasSize<u32> for WgpuImageFrame {
-    fn size(&self) -> Pair<u32> {
-        self.size
     }
 }
 
@@ -170,7 +158,6 @@ impl From<WgpuFrameRenderContextInit> for WgpuFrameRenderContext {
 }
 
 impl FrameRenderContext for WgpuFrameRenderContext {
-    type Frame = WgpuImageFrame;
     type RenderError = wgpu::SurfaceError;
     type Init = WgpuFrameRenderContextInit;
 
@@ -180,7 +167,10 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         self.surface.configure(&self.device, &self.config);
     }
 
-    fn draw_frame(&mut self, mut frame_provider: impl Iterator<Item = Self::Frame>) -> Result<(), Self::RenderError> {
+    fn draw_frame<Frame>(&mut self, mut frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
+    where
+        Frame: HasSize<u32> + HasPosition<u32> + HasData
+    {
         match frame_provider.next() {
             None => Ok(()),
             Some(frame) => {
@@ -196,7 +186,7 @@ impl FrameRenderContext for WgpuFrameRenderContext {
 
                         let texture_data_layout = wgpu::ImageDataLayout {
                             offset: 0,
-                            rows_per_image: Some(frame.size.1),
+                            rows_per_image: Some(frame_size.1),
                             bytes_per_row: Some(4 * frame_size.0),
                         };
 
@@ -217,7 +207,7 @@ impl FrameRenderContext for WgpuFrameRenderContext {
 
                         self.queue.write_texture(
                             texture.as_image_copy(),
-                            &frame.buffer,
+                            &frame.data(),
                             texture_data_layout,
                             texture_size,
                         );

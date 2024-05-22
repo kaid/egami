@@ -4,7 +4,7 @@ use winit::{
     application::ApplicationHandler, dpi::PhysicalSize, error::EventLoopError, event::*, event_loop::{ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
 };
 
-use egami::renderer::{self, FrameRenderContext, Pair, WgpuFrameRenderContext, WgpuFrameRenderContextInit, WgpuImageFrame};
+use egami::renderer::{self, FrameRenderContext, HasData, HasPosition, HasSize, Pair, WgpuFrameRenderContext, WgpuFrameRenderContextInit};
 
 #[derive(Default)]
 struct App {
@@ -99,6 +99,29 @@ impl ApplicationHandler for App {
 struct WgpuImageProvider {
     size: Pair<u32>,
     image_buffer: Vec<u8>,
+}
+
+struct WgpuImageFrame {
+    size: Pair<u32>,
+    buffer: Vec<u8>,
+}
+
+impl HasPosition<u32> for WgpuImageFrame {
+    fn position(&self) -> Pair<u32> {
+        (0, 0)
+    }
+}
+
+impl HasSize<u32> for WgpuImageFrame {
+    fn size(&self) -> Pair<u32> {
+        self.size
+    }
+}
+
+impl HasData for WgpuImageFrame {
+    fn data(&self) -> &[u8] {
+        &self.buffer
+    }
 }
 
 impl WgpuImageProvider {
