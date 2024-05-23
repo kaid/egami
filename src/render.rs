@@ -41,7 +41,7 @@ impl WgpuFrameRenderContext {
 
     fn draw<Func>(&self, update_render_pass: Func) -> Result<(), wgpu::SurfaceError>
     where
-        Func: FnOnce(&mut wgpu::RenderPass, Option<&WgpuFrameRenderContextResources>)
+        Func: FnOnce(&mut wgpu::CommandEncoder, &wgpu::TextureView)
     {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -54,26 +54,7 @@ impl WgpuFrameRenderContext {
                 label: Some("Render Encoder"),
             });
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                depth_stencil_attachment: None,
-            });
-
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.index_count, 0, 0..1);
-            update_render_pass(&mut render_pass, self.resources.as_ref());
-        }
+        update_render_pass(&mut encoder, &view);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
@@ -320,12 +301,6 @@ impl WgpuFrameRenderContextResources {
         }
     }
 
-    fn send_to_render_pass<'a>(&'a self, render_pass: &'a mut wgpu::RenderPass<'a>) {
-        render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-    }
-
     fn queue_write_texture<Frame>(&self, queue: &wgpu::Queue, frame: &Frame)
     where
         Frame: HasSize<u32> + HasPosition<u32> + HasData
@@ -369,11 +344,33 @@ impl FrameRenderContext for WgpuFrameRenderContext {
             self.init_resources(frame);
         }
 
-        self.draw(|render_pass, resouces| {
-            if let (Some(frame), Some(resources)) = (frame.as_ref(), resouces) {
+        let resources = self.resources.as_ref();
+
+        self.draw(|encoder, view| {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                depth_stencil_attachment: None,
+            });
+        
+            if let (Some(frame), Some(resources)) = (frame.as_ref(), resources) {
                 resources.queue_write_texture(&self.queue, frame);
-                resources.send_to_render_pass(render_pass);
+                render_pass.set_pipeline(&resources.render_pipeline);
+                render_pass.set_bind_group(0, &resources.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
             }
+
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.index_count, 0, 0..1);
         })
     }
 }
