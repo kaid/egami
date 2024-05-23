@@ -334,7 +334,7 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         }
     }
 
-    fn draw_frame<'a, Frame>(&mut self, mut frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
+    fn draw_frame<Frame>(&mut self, mut frame_provider: impl Iterator<Item = Frame>) -> Result<(), Self::RenderError>
     where
         Frame: HasSize<u32> + HasPosition<u32> + HasData
     {
@@ -347,30 +347,31 @@ impl FrameRenderContext for WgpuFrameRenderContext {
         let resources = self.resources.as_ref();
 
         self.draw(|encoder, view| {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                depth_stencil_attachment: None,
-            });
-        
             if let (Some(frame), Some(resources)) = (frame.as_ref(), resources) {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(self.clear_color),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    depth_stencil_attachment: None,
+                });
+        
                 resources.queue_write_texture(&self.queue, frame);
+
                 render_pass.set_pipeline(&resources.render_pipeline);
                 render_pass.set_bind_group(0, &resources.bind_group, &[]);
                 render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
-            }
 
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.index_count, 0, 0..1);
+                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..self.index_count, 0, 0..1);
+            }
         })
     }
 }

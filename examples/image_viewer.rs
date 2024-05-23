@@ -80,9 +80,9 @@ impl ApplicationHandler for App {
         self.window = Some(Arc::clone(&window));
         self.frame_provider = Some(WgpuImageProvider::new());
         self.render_context = Some(WgpuFrameRenderContext::init(WgpuFrameRenderContextInit {
+            clear_color: None,
             surface_handle: window.into(),
             surface_size: (window_size.width, window_size.height),
-            clear_color: None,
         }));
     }
 
